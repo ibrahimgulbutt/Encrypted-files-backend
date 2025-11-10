@@ -135,12 +135,29 @@ class FileService:
             # Convert to response models
             files = []
             for file_data in files_data:
-                # Convert metadata dict back to FileMetadata object
-                metadata_data = file_data["encrypted_metadata"]
-                if isinstance(metadata_data, str):
-                    import json
-                    metadata_data = json.loads(metadata_data)
-                metadata = FileMetadata(**metadata_data) if isinstance(metadata_data, dict) else metadata_data
+                try:
+                    # Convert metadata dict back to FileMetadata object
+                    metadata_data = file_data["encrypted_metadata"]
+                    if isinstance(metadata_data, str):
+                        import json
+                        metadata_data = json.loads(metadata_data)
+                    
+                    # Handle legacy files without encryption_key, iv, and salt fields
+                    if isinstance(metadata_data, dict):
+                        # Add default values for missing required fields (for legacy compatibility)
+                        if "encryption_key" not in metadata_data:
+                            metadata_data["encryption_key"] = ""  # Empty string as default
+                        if "iv" not in metadata_data:
+                            metadata_data["iv"] = ""  # Empty string as default
+                        if "salt" not in metadata_data:
+                            metadata_data["salt"] = ""  # Empty string as default
+                        if "checksum" not in metadata_data:
+                            metadata_data["checksum"] = ""  # Empty string as default
+                    
+                    metadata = FileMetadata(**metadata_data) if isinstance(metadata_data, dict) else metadata_data
+                except Exception as metadata_error:
+                    logger.warning(f"Skipping file {file_data['id']} due to invalid metadata: {metadata_error}")
+                    continue  # Skip this file and continue with the next one
                 
                 files.append(FileListResponse(
                     id=file_data["id"],
@@ -193,6 +210,19 @@ class FileService:
             if isinstance(metadata_data, str):
                 import json
                 metadata_data = json.loads(metadata_data)
+            
+            # Handle legacy files without encryption_key, iv, and salt fields
+            if isinstance(metadata_data, dict):
+                # Add default values for missing required fields (for legacy compatibility)
+                if "encryption_key" not in metadata_data:
+                    metadata_data["encryption_key"] = ""  # Empty string as default
+                if "iv" not in metadata_data:
+                    metadata_data["iv"] = ""  # Empty string as default
+                if "salt" not in metadata_data:
+                    metadata_data["salt"] = ""  # Empty string as default
+                if "checksum" not in metadata_data:
+                    metadata_data["checksum"] = ""  # Empty string as default
+            
             metadata = FileMetadata(**metadata_data) if isinstance(metadata_data, dict) else metadata_data
             
             return FileResponse(

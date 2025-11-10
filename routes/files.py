@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/files", tags=["File Management"])
 
-@router.post("/upload", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("/upload")
 @apply_upload_rate_limit
 async def upload_file(
     request: Request,
@@ -22,11 +22,20 @@ async def upload_file(
     encrypted_filename: str = Form(...),
     encrypted_metadata: str = Form(...),
     file_size: int = Form(...),
-    current_user: TokenData = Depends(require_auth),
-    supabase_client = Depends(get_supabase)
+    current_user: TokenData = Depends(require_auth)
 ):
     """Upload encrypted file"""
     try:
+        # DEBUG: Log received form data
+        logger.debug(f"=== FILE UPLOAD DEBUG ===")
+        logger.debug(f"User ID: {current_user.user_id}")
+        logger.debug(f"File name: {file.filename}")
+        logger.debug(f"File content type: {file.content_type}")
+        logger.debug(f"File size (actual): {file.size if hasattr(file, 'size') else 'unknown'}")
+        logger.debug(f"Encrypted filename: {encrypted_filename}")
+        logger.debug(f"Encrypted metadata (raw): {encrypted_metadata}")
+        logger.debug(f"File size (form): {file_size}")
+        logger.debug(f"=========================")
         # Extract JWT token from Authorization header for authenticated storage operations
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
@@ -36,10 +45,15 @@ async def upload_file(
         
         # Parse encrypted metadata
         try:
+            logger.debug(f"Parsing metadata: {encrypted_metadata}")
             metadata_dict = json.loads(encrypted_metadata)
+            logger.debug(f"Parsed metadata dict: {metadata_dict}")
             metadata = FileMetadata(**metadata_dict)
+            logger.debug(f"Created FileMetadata object: {metadata}")
         except (json.JSONDecodeError, ValueError) as e:
-            return APIResponse.validation_error(message="Invalid metadata format")
+            logger.error(f"Metadata parsing failed: {e}")
+            logger.error(f"Raw metadata: {encrypted_metadata}")
+            return APIResponse.validation_error(message=f"Invalid metadata format: {str(e)}")
         
         # Create file upload model
         file_upload = FileUpload(
@@ -49,6 +63,7 @@ async def upload_file(
         )
         
         # Upload file with regular client (should work with anonymous policy)
+        supabase_client = get_supabase()
         file_service = FileService(supabase_client)
         result = await file_service.upload_file(
             user_id=current_user.user_id,
@@ -68,6 +83,7 @@ async def upload_file(
         )
         
     except ValueError as e:
+        logger.error(f"File upload ValueError: {e}")
         if "quota exceeded" in str(e).lower():
             return APIResponse.error(
                 code="STORAGE_QUOTA_EXCEEDED",
@@ -82,7 +98,7 @@ async def upload_file(
         logger.error(f"File upload error: {e}")
         return APIResponse.internal_error(message="File upload failed")
 
-@router.get("", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("")
 @apply_api_rate_limit
 async def list_files(
     request: Request,
@@ -135,7 +151,7 @@ async def list_files(
         logger.error(f"List files error: {e}")
         return APIResponse.internal_error(message="Failed to list files")
 
-@router.get("/{file_id}", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/{file_id}")
 @apply_api_rate_limit
 async def get_file_metadata(
     request: Request,
@@ -168,7 +184,7 @@ async def get_file_metadata(
         logger.error(f"Get file metadata error: {e}")
         return APIResponse.internal_error(message="Failed to get file metadata")
 
-@router.get("/{file_id}/download", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/{file_id}/download")
 @apply_download_rate_limit
 async def download_file(
     request: Request,
@@ -178,10 +194,18 @@ async def download_file(
 ):
     """Download encrypted file (returns pre-signed URL)"""
     try:
+        # DEBUG: Log download request
+        logger.debug(f"=== FILE DOWNLOAD DEBUG ===")
+        logger.debug(f"User ID: {current_user.user_id}")
+        logger.debug(f"File ID: {file_id}")
+        
         file_service = FileService(supabase_client)
         result = await file_service.download_file(current_user.user_id, file_id)
         
+        logger.debug(f"Download result: {result}")
+        
         if not result:
+            logger.debug("File not found")
             return APIResponse.not_found(message="File not found")
         
         return APIResponse.success(
@@ -197,7 +221,7 @@ async def download_file(
         logger.error(f"File download error: {e}")
         return APIResponse.internal_error(message="File download failed")
 
-@router.delete("/{file_id}", response_model=dict, status_code=status.HTTP_200_OK)
+@router.delete("/{file_id}")
 @apply_api_rate_limit
 async def delete_file(
     request: Request,
@@ -227,7 +251,7 @@ async def delete_file(
         logger.error(f"File delete error: {e}")
         return APIResponse.internal_error(message="File deletion failed")
 
-@router.delete("/{file_id}/permanent", response_model=dict, status_code=status.HTTP_200_OK)
+@router.delete("/{file_id}/permanent")
 @apply_api_rate_limit
 async def permanently_delete_file(
     request: Request,

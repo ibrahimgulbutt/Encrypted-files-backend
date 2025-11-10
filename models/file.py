@@ -6,6 +6,10 @@ class FileMetadata(BaseModel):
     encrypted_size: str = Field(description="Encrypted file size")
     encrypted_type: str = Field(description="Encrypted file type")
     encrypted_original_name: str = Field(description="Encrypted original filename")
+    encryption_key: str = Field(description="Base64 encoded encryption key")
+    iv: str = Field(description="Base64 encoded initialization vector")
+    salt: str = Field(description="Base64 encoded salt for key encryption")
+    checksum: str = Field(default="", description="File checksum for integrity verification")
 
 class FileUpload(BaseModel):
     encrypted_filename: str = Field(..., description="Base64 encrypted filename")
