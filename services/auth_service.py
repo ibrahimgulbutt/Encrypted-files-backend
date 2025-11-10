@@ -1,4 +1,3 @@
-from passlib.context import CryptContext
 from supabase import Client
 from models.user import UserCreate, UserLogin, UserDB, PasswordChange
 from models.auth import LoginResponse, RegisterResponse, TokenResponse
@@ -8,13 +7,68 @@ from config.settings import settings
 from datetime import datetime
 import uuid
 import logging
+import hashlib
+import secrets
+import hmac
 
 logger = logging.getLogger(__name__)
 
 class AuthService:
     def __init__(self, supabase_client: Client):
         self.client = supabase_client
-        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        # Use a more reliable hashing approach instead of bcrypt
+        self.hash_iterations = 100000  # PBKDF2 iterations
+    
+    def _hash_password(self, password_hash: str, salt: str) -> str:
+        """Securely hash password using PBKDF2"""
+        # Combine client password hash with salt
+        combined = f"{password_hash}:{salt}"
+        
+        # Generate a random salt for PBKDF2
+        pbkdf2_salt = secrets.token_bytes(32)
+        
+        # Hash using PBKDF2
+        password_key = hashlib.pbkdf2_hmac(
+            'sha256', 
+            combined.encode('utf-8'), 
+            pbkdf2_salt, 
+            self.hash_iterations
+        )
+        
+        # Return salt + hash (base64 encoded for storage)
+        import base64
+        salt_and_hash = pbkdf2_salt + password_key
+        return base64.b64encode(salt_and_hash).decode('utf-8')
+    
+    def _verify_password(self, password_hash: str, salt: str, stored_hash: str) -> bool:
+        """Verify password using PBKDF2"""
+        try:
+            import base64
+            
+            # Decode stored hash
+            salt_and_hash = base64.b64decode(stored_hash.encode('utf-8'))
+            
+            # Extract salt (first 32 bytes) and hash (remaining bytes)
+            pbkdf2_salt = salt_and_hash[:32]
+            stored_password_key = salt_and_hash[32:]
+            
+            # Combine client password hash with salt
+            combined = f"{password_hash}:{salt}"
+            
+            # Hash the provided password with the same salt
+            password_key = hashlib.pbkdf2_hmac(
+                'sha256',
+                combined.encode('utf-8'),
+                pbkdf2_salt,
+                self.hash_iterations
+            )
+            
+            # Use constant-time comparison
+            return hmac.compare_digest(password_key, stored_password_key)
+            
+        except Exception as e:
+            logger.error(f"Password verification error: {e}")
+            return False
     
     async def register_user(self, user_data: UserCreate) -> RegisterResponse:
         """Register a new user"""
@@ -37,8 +91,9 @@ class AuthService:
             # Create user ID
             user_id = str(uuid.uuid4())
             
-            # Hash the already hashed password for additional security
-            final_password_hash = self.pwd_context.hash(user_data.password_hash + user_data.salt)
+            # Hash the already hashed password for additional security using PBKDF2
+            final_password_hash = self._hash_password(user_data.password_hash, user_data.salt)
+            logger.info("Password successfully hashed using PBKDF2")
             
             # Create user record
             user_record = {
@@ -87,9 +142,8 @@ class AuthService:
             if not user.is_active:
                 raise ValueError("Account is not active")
             
-            # Verify password (hash the client hash + salt and compare)
-            password_to_check = login_data.password_hash + user.salt
-            if not self.pwd_context.verify(password_to_check, user.password_hash):
+            # Verify password using PBKDF2
+            if not self._verify_password(login_data.password_hash, user.salt, user.password_hash):
                 raise ValueError("Invalid credentials")
             
             # Update last login
@@ -132,9 +186,8 @@ class AuthService:
             
             user = UserDB(**user_result.data[0])
             
-            # Verify old password
-            old_password_to_check = password_data.old_password_hash + user.salt
-            if not self.pwd_context.verify(old_password_to_check, user.password_hash):
+            # Verify old password using PBKDF2
+            if not self._verify_password(password_data.old_password_hash, user.salt, user.password_hash):
                 raise ValueError("Invalid current password")
             
             # Validate new password
@@ -144,10 +197,8 @@ class AuthService:
             if not ValidationUtils.validate_salt(password_data.new_salt):
                 raise ValueError("Invalid new salt format")
             
-            # Hash new password
-            new_password_hash = self.pwd_context.hash(
-                password_data.new_password_hash + password_data.new_salt
-            )
+            # Hash new password using PBKDF2
+            new_password_hash = self._hash_password(password_data.new_password_hash, password_data.new_salt)
             
             # Update password
             self.client.table("users").update({
@@ -178,3 +229,31 @@ class AuthService:
         except Exception as e:
             logger.error(f"User verification error: {e}")
             return False
+    
+    async def get_user_by_email(self, email: str) -> UserDB:
+        """Get user by email address"""
+        try:
+            user_result = self.client.table("users").select("*").eq("email", email).execute()
+            
+            if not user_result.data:
+                return None
+            
+            return UserDB(**user_result.data[0])
+            
+        except Exception as e:
+            logger.error(f"Get user by email error: {e}")
+            return None
+    
+    async def get_user_by_email(self, email: str) -> UserDB:
+        """Get user by email address"""
+        try:
+            user_result = self.client.table("users").select("*").eq("email", email).execute()
+            
+            if not user_result.data:
+                return None
+            
+            return UserDB(**user_result.data[0])
+            
+        except Exception as e:
+            logger.error(f"Get user by email error: {e}")
+            return None

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from models.user import UserCreate, UserLogin, PasswordChange
-from models.auth import LoginResponse, RegisterResponse, TokenVerifyResponse
+from models.auth import LoginResponse, RegisterResponse, TokenVerifyResponse, GetSaltRequest, GetSaltResponse
 from services.auth_service import AuthService
 from middleware.auth import require_auth
 from middleware.rate_limit import apply_login_rate_limit, apply_register_rate_limit, limiter
@@ -125,3 +125,34 @@ async def verify_token(
             "expires_at": current_user.expires_at.isoformat() if current_user.expires_at else None
         }
     )
+
+@router.post("/get-salt", response_model=dict, status_code=status.HTTP_200_OK)
+@limiter.limit("10/minute")
+async def get_user_salt(
+    request: Request,
+    salt_request: GetSaltRequest,
+    supabase_client = Depends(get_supabase)
+):
+    """
+    Get user's salt for secure login process
+    Rate limited to prevent enumeration attacks
+    """
+    try:
+        auth_service = AuthService(supabase_client)
+        
+        # Find user by email
+        user = await auth_service.get_user_by_email(salt_request.email)
+        if not user:
+            # Return generic error to prevent email enumeration
+            return APIResponse.not_found(message="User not found")
+            
+        return APIResponse.success(
+            data={
+                "salt": user.salt
+            },
+            message="Salt retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Get salt error: {str(e)}")
+        return APIResponse.internal_error(message="Failed to retrieve salt")

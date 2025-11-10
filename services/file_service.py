@@ -1,5 +1,5 @@
 from supabase import Client
-from models.file import FileUpload, FileResponse, FileListResult, FileQueryParams, FileDeleteResponse, FileDB, FilePagination, FileDownloadResponse
+from models.file import FileUpload, FileResponse, FileListResult, FileQueryParams, FileDeleteResponse, FileDB, FilePagination, FileDownloadResponse, FileListResponse, FileMetadata
 from config.storage import StorageService
 from services.user_service import UserService
 from utils.validators import ValidationUtils, SecurityValidator
@@ -12,10 +12,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 class FileService:
-    def __init__(self, supabase_client: Client):
+    def __init__(self, supabase_client: Client, user_jwt_token: str = None):
         self.client = supabase_client
-        self.storage_service = StorageService(supabase_client)
+        self.storage_service = StorageService(supabase_client, user_jwt_token)
         self.user_service = UserService(supabase_client)
+        self.user_jwt_token = user_jwt_token
     
     async def upload_file(
         self, 
@@ -134,14 +135,20 @@ class FileService:
             # Convert to response models
             files = []
             for file_data in files_data:
-                files.append(FileResponse(
+                # Convert metadata dict back to FileMetadata object
+                metadata_data = file_data["encrypted_metadata"]
+                if isinstance(metadata_data, str):
+                    import json
+                    metadata_data = json.loads(metadata_data)
+                metadata = FileMetadata(**metadata_data) if isinstance(metadata_data, dict) else metadata_data
+                
+                files.append(FileListResponse(
                     id=file_data["id"],
                     encrypted_filename=file_data["encrypted_filename"],
-                    encrypted_metadata=file_data["encrypted_metadata"],
+                    encrypted_metadata=metadata,
                     file_size=file_data["file_size"],
                     uploaded_at=datetime.fromisoformat(file_data["uploaded_at"].replace("Z", "+00:00")),
-                    last_accessed=datetime.fromisoformat(file_data["last_accessed"].replace("Z", "+00:00")) if file_data.get("last_accessed") else None,
-                    encryption_algorithm=file_data.get("encryption_algorithm", "AES-256-GCM")
+                    last_accessed=datetime.fromisoformat(file_data["last_accessed"].replace("Z", "+00:00")) if file_data.get("last_accessed") else None
                 ))
             
             # Calculate pagination info
@@ -181,10 +188,17 @@ class FileService:
                 "last_accessed": datetime.utcnow().isoformat()
             }).eq("id", file_id).execute()
             
+            # Convert metadata dict back to FileMetadata object
+            metadata_data = file_data["encrypted_metadata"]
+            if isinstance(metadata_data, str):
+                import json
+                metadata_data = json.loads(metadata_data)
+            metadata = FileMetadata(**metadata_data) if isinstance(metadata_data, dict) else metadata_data
+            
             return FileResponse(
                 id=file_data["id"],
                 encrypted_filename=file_data["encrypted_filename"],
-                encrypted_metadata=file_data["encrypted_metadata"],
+                encrypted_metadata=metadata,
                 file_size=file_data["file_size"],
                 uploaded_at=datetime.fromisoformat(file_data["uploaded_at"].replace("Z", "+00:00")),
                 last_accessed=datetime.utcnow(),

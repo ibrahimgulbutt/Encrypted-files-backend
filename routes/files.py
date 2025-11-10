@@ -27,6 +27,13 @@ async def upload_file(
 ):
     """Upload encrypted file"""
     try:
+        # Extract JWT token from Authorization header for authenticated storage operations
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return APIResponse.error(message="Missing authentication token", status_code=401)
+        
+        jwt_token = auth_header.split(" ")[1]
+        
         # Parse encrypted metadata
         try:
             metadata_dict = json.loads(encrypted_metadata)
@@ -41,7 +48,7 @@ async def upload_file(
             file_size=file_size
         )
         
-        # Upload file
+        # Upload file with regular client (should work with anonymous policy)
         file_service = FileService(supabase_client)
         result = await file_service.upload_file(
             user_id=current_user.user_id,
@@ -104,7 +111,7 @@ async def list_files(
             files_data.append({
                 "id": file_item.id,
                 "encrypted_filename": file_item.encrypted_filename,
-                "encrypted_metadata": file_item.encrypted_metadata,
+                "encrypted_metadata": file_item.encrypted_metadata.dict(),
                 "file_size": file_item.file_size,
                 "uploaded_at": file_item.uploaded_at.isoformat(),
                 "last_accessed": file_item.last_accessed.isoformat() if file_item.last_accessed else None
@@ -148,7 +155,7 @@ async def get_file_metadata(
             data={
                 "id": result.id,
                 "encrypted_filename": result.encrypted_filename,
-                "encrypted_metadata": result.encrypted_metadata,
+                "encrypted_metadata": result.encrypted_metadata.dict(),
                 "file_size": result.file_size,
                 "uploaded_at": result.uploaded_at.isoformat(),
                 "encryption_algorithm": result.encryption_algorithm

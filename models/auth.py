@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -34,6 +34,13 @@ class RegisterResponse(BaseModel):
     user_id: str
     email: str
     created_at: datetime
+
+class GetSaltRequest(BaseModel):
+    email: EmailStr
+
+class GetSaltResponse(BaseModel):
+    success: bool
+    data: Dict[str, str]
 
 # JWT Payload model for internal use
 class JWTPayload(BaseModel):

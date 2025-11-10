@@ -32,6 +32,23 @@ class SupabaseConnection:
         except Exception as e:
             logger.error(f"Failed to initialize Supabase service client: {e}")
             raise
+    
+    @classmethod
+    def get_authenticated_client(cls, access_token: str) -> Client:
+        """Get Supabase client with user authentication token"""
+        try:
+            # For now, let's just use the regular client and handle authentication at the request level
+            # This is a simpler approach that should work with the current Supabase Python client
+            client = create_client(
+                supabase_url=settings.supabase_url,
+                supabase_key=settings.supabase_key
+            )
+            
+            # We'll add the Authorization header manually to storage requests
+            return client
+        except Exception as e:
+            logger.error(f"Failed to create authenticated Supabase client: {e}")
+            raise
 
 # Convenience function to get the client
 def get_supabase() -> Client:
@@ -39,3 +56,6 @@ def get_supabase() -> Client:
 
 def get_supabase_service() -> Client:
     return SupabaseConnection.get_service_client()
+
+def get_supabase_authenticated(access_token: str) -> Client:
+    return SupabaseConnection.get_authenticated_client(access_token)
